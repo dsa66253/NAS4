@@ -27,6 +27,7 @@ class NasModel(nn.Module):
         self.min_alpha3 = True
 
         # 設定nas架構，訓練5個cell
+        #* use this way to dynamically determine network
         self.feature = nn.Sequential()
         self.feature.add_module('conv_1', cell(3, 96, 4))
         self.feature.add_module('max_pool1', nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
@@ -48,22 +49,23 @@ class NasModel(nn.Module):
     # 初始化alpha
     def _initialize_alphas(self):
         num_ops = len(PRIMITIVES)
-        alphas = (1e-3 * torch.ones(self.num_cells, num_ops))
-        alphas = alphas.detach().requires_grad_(True)
+        alphas = (1e-3 * torch.ones(self.num_cells, num_ops)) #create tensor with element 1
+        alphas = alphas.detach().requires_grad_(True) #*這樣的寫法是用detah() copy alphas，然後要追蹤gradient
 
         self.alphas_mask = torch.full(alphas.shape, False, dtype=torch.bool)
-        self._arch_parameters = [alphas]
-        self._arch_param_names = ['alphas']
+        self._arch_parameters = [alphas]# * Just want to use zip(), wrap alphas with []
+        self._arch_param_names = ['alphas'] #* Just want to use zip(), wrap string with []
         [self.register_parameter(name, nn.Parameter(param))
-         for name, param in zip(self._arch_param_names, self._arch_parameters)]
+        for name, param in zip(self._arch_param_names, self._arch_parameters)]
 
     # @staticmethod
     # 當epoch等於所設定要剔除的epoch位置，將cell中最小的alpha值機率變為0
     def check_min_alpah(self, input, epoch):
         if (epoch == epoch_to_drop[0] and self.min_alpha1):
-            for n in range(dropNum[0]):
+            for n in range(dropNum[0]):#*only one-iteration loop
                 print(f'Drop min alphas: {epoch}, {epoch_to_drop[0]}')
                 tmp_input_for_min = input[~self.alphas_mask].reshape(self.num_cells, -1)  # ~表示相反
+
                 _, min_indices = tmp_input_for_min.min(1)
                 next_alphas_mask = self.alphas_mask.clone()
                 next_mask = torch.full(tmp_input_for_min.shape, False, dtype=torch.bool)
@@ -80,7 +82,9 @@ class NasModel(nn.Module):
         if epoch == epoch_to_drop[1] and self.min_alpha2:
             for n in range(dropNum[1]):
                 print(f'Drop min alphas: {epoch}, {epoch_to_drop[1]}')
+
                 tmp_input_for_min = input[~self.alphas_mask].reshape(self.num_cells, -1)  # ~表示相反
+                
                 _, min_indices = tmp_input_for_min.min(1)
 
                 next_alphas_mask = self.alphas_mask.clone()
@@ -119,13 +123,13 @@ class NasModel(nn.Module):
 
     # 讓alpha值過softmax變機率值
     def normalize(self, input, epoch, number, num_cells):
-        print('----------input data---------------')
-        print(input)
+        # print('----------input data---------------')
+        # print(input)
         mask = (input != 0)
         new_input = torch.zeros_like(input)
         new_input[mask] += F.softmax(input[mask].reshape(num_cells, -1)).reshape(-1)
 
-        print(new_input)
+        # print(new_input)
 
         #save 每個cell中alpha值樣貌
         if epoch % 1 == 0 and epoch > 0:
@@ -136,7 +140,7 @@ class NasModel(nn.Module):
 
     def forward(self, x, epoch, number, num_cells):
         count_alpha = 0
-        alpha_new = self.check_min_alpah(self.alphas, epoch)
+        alpha_new = self.check_min_alpah(self.alphas, epoch) #*model's alpha parameters added via registered_parameter()
         norm_alphas = self.normalize(alpha_new, epoch, number, num_cells)
         x = self.feature.conv_1(x, norm_alphas[count_alpha])
         count_alpha += 1
@@ -160,6 +164,8 @@ class NasModel(nn.Module):
         return x
 
     def nas_parameters(self):
+        #* 挑出alpha return出去
+        #* parameter name有alpha的都return 出去
         if hasattr(self, '_nas_parameters'):
             return self._nas_parameters
 
@@ -175,6 +181,8 @@ class NasModel(nn.Module):
         return self._nas_parameters
 
     def model_parameters(self):
+        #* 挑出weight return出去
+        #* parameter name沒alpha的都return 出去
         if hasattr(self, '_model_parameters'):
             return self._model_parameters
 

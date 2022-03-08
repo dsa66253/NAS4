@@ -15,7 +15,7 @@ cfg_alexnet = {
     'in_channel': 8,
     'out_channel': 64
 }
-
+# 
 cfg_nasmodel = {
     'name': 'NasModel',
     'clip': False,
@@ -50,7 +50,7 @@ cfg_newnasmodel = {
     'out_channel': 64
 }
 
-epoch_to_drop = [15, 25, 35] #在第幾個epoch要使用剔除機制
+epoch_to_drop = [1, 25, 35] #在第幾個epoch要使用剔除機制
 dropNum = [1, 1, 1] #在特定epoch剔除1個最小alpha的操作
 
 PRIMITIVES = [

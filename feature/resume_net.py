@@ -1,3 +1,4 @@
+import torch
 def resumeNet(resume_net, net):
     if resume_net is not None:
         print('Loading resume network...')

@@ -15,7 +15,8 @@ import time
 from torchvision import datasets
 from data.config import cfg_nasmodel, cfg_alexnet
 from models.alexnet import Baseline
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter #* how about use tensorbaord instead of tensorboardX
+from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 import numpy as np
 from models.nas_5cell import NasModel
@@ -30,6 +31,7 @@ from feature.plot_image import plot_img
 from feature.split_data import split_data
 from feature.random_seed import set_seed_cpu
 from PIL import ImageFile
+from tqdm import tqdm
 
 
 def parse_args():
@@ -65,43 +67,48 @@ def train(number, seed_img, seed_weight):
 
     # prepare data loaders
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, num_workers=num_workers,
-                                               shuffle=False)
+                                            shuffle=False)
 
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=batch_size, num_workers=num_workers,
-                                             shuffle=False)
+                                            shuffle=False)
 
     # 確認training dataset的大小
     for batch_x, batch_y in train_loader:
         print((batch_x.shape, batch_y.shape))
         break
+    
 
     if cfg['name'] == 'alexnet':  # BASELINE
-        net = Baseline(10)  # 共分10類
-        print("Printing net...")
+        net = Baseline(10)  # 共分10類  it's alexnet
+        print("Printing alexnet...")
         print(net)
         optimizer = optim.SGD(net.parameters(), lr=initial_lr, momentum=momentum, weight_decay=weight_decay)
-
+    
     elif cfg['name'] == 'NasModel':
         set_seed_cpu(seed_weight)  # 固定初始權重
         net = NasModel(num_classes, num_cells)  # 進入nas model
         model_optimizer = optim.SGD(net.model_parameters(), lr=initial_lr, momentum=momentum,
                                     weight_decay=weight_decay)
         nas_optimizer = optim.Adam(net.nas_parameters(), lr=nas_initial_lr, weight_decay=weight_decay)
-        print("Printing net...")
-        print(net)
+        print("Printing NasModel...")
+        # print(net)
 
     # print('---------checked train_images---------')
     # print(train_images)
 
-    resumeNet(args.resume_net, net)
+    # resumeNet(args.resume_net, net) #* it seems useless.
     criterion = nn.CrossEntropyLoss()
 
     if num_gpu > 1 and gpu_train:
+        print("num_gpu > 1 and gpu_trai")
         net = torch.nn.DataParallel(net).cuda()
     else:
-        net = net.cuda()
-    cudnn.benchmark = True
+        print("num_gpu > 1 and gpu_trai ELSE")
+        # net = net.cuda() # original code
+        net = net.to(device)
 
+    cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
+    
     writer = SummaryWriter(log_dir=args.log_dir,
                            comment="LR_%.3f_BATCH_%d".format(initial_lr, batch_size))
     net.train()
@@ -110,22 +117,24 @@ def train(number, seed_img, seed_weight):
     print('Loading Dataset...')
 
     # 加載數據集
-    epoch_size = math.ceil(len(train_data) / batch_size)
-    max_iter = max_epoch * epoch_size
-
+    epoch_size = math.ceil(len(train_data) / batch_size)#* It should be number of batch
+    max_iter = max_epoch * epoch_size #* it's correct here. It's the totoal iterations.
+    #* a iteration go through a mini-batch(aka batch)
     stepvalues = (cfg['decay1'] * epoch_size, cfg['decay2'] * epoch_size)
     step_index = 0
 
-    if args.resume_epoch > 0:
-        start_iter = args.resume_epoch * epoch_size
-    else:
-        start_iter = 0
-
+    # if args.resume_epoch > 0:
+    #     start_iter = args.resume_epoch * epoch_size
+    # else:
+    #     start_iter = 0
+    start_iter = 0
     print('Start to train...')
     i = 0
-    for iteration in range(start_iter, max_iter):
+    for iteration in tqdm(range(start_iter, max_iter)):
+        
+        # finish an epoch
         if iteration % epoch_size == 0:
-            print('hi start~')
+            # print('hi start~')
             # create batch iterator
             train_batch_iterator = iter(train_loader)
 
@@ -144,7 +153,8 @@ def train(number, seed_img, seed_weight):
         load_t0 = time.time()
         if iteration in stepvalues:
             step_index += 1
-
+        
+        #! why need to adjust learning rate, Tseng didn't say that
         lr = adjust_learning_rate(
             model_optimizer if args.network == 'nasmodel' else optimizer,
             gamma, epoch, step_index, iteration, epoch_size)
@@ -170,7 +180,7 @@ def train(number, seed_img, seed_weight):
             nas_optimizer.zero_grad()
         else:
             optimizer.zero_grad()
-
+        
         # 正向傳播
         train_outputs = net(train_images, epoch, number, num_cells)
         # 計算Loss
@@ -193,7 +203,10 @@ def train(number, seed_img, seed_weight):
         # model預測出來的結果 (訓練集)
         _, predicts = torch.max(train_outputs.data, 1)
         record_train_loss.append(train_loss.item())
-
+        
+        #! Why she use validation directly at the end of an iteration.
+        #! Usually we use validation after finishing all training.
+        #! And chose the model generate with best accuracy on validation set
         # model預測出來的結果 (測試集)
         val_outputs = net(val_images, epoch, number, num_cells)
         _, predicts_val = torch.max(val_outputs.data, 1)
@@ -214,14 +227,14 @@ def train(number, seed_img, seed_weight):
         load_t1 = time.time()
         batch_time = load_t1 - load_t0
         eta = int(batch_time * (max_iter - iteration))
-        print(
-            'Epoch:{}/{} || Epochiter: {}/{} || Iter: {}/{} || train_loss: {:.4f} || val_loss: {:.4f} || train_Accuracy: {:.4f} || val_Accuracy: {:.4f} || LR: {:.8f} || Batchtime: {:.4f} s || '
-            'ETA: {} '
-                .format(epoch, max_epoch, (iteration % epoch_size) + 1,
-                        epoch_size, iteration + 1, max_iter, train_loss.item(), val_loss.item(),
-                        100 * correct_images.item() / total_images,
-                        100 * correct_images_val.item() / total_images_val,
-                        lr, batch_time, str(datetime.timedelta(seconds=eta))))
+        # print(
+        #     'Epoch:{}/{} || Epochiter: {}/{} || Iter: {}/{} || train_loss: {:.4f} || val_loss: {:.4f} || train_Accuracy: {:.4f} || val_Accuracy: {:.4f} || LR: {:.8f} || Batchtime: {:.4f} s || '
+        #     'ETA: {} '
+        #         .format(epoch, max_epoch, (iteration % epoch_size) + 1,
+        #                 epoch_size, iteration + 1, max_iter, train_loss.item(), val_loss.item(),
+        #                 100 * correct_images.item() / total_images,
+        #                 100 * correct_images_val.item() / total_images_val,
+        #                 lr, batch_time, str(datetime.timedelta(seconds=eta))))
 
         # 使用tensorboard紀錄LOSS、ACC
         writer.add_scalar('Train_Loss', train_loss.item(), iteration + 1)
@@ -233,16 +246,24 @@ def train(number, seed_img, seed_weight):
     torch.save(net.state_dict(), os.path.join(save_folder, cfg['name'] + str(number) + '_Final.pth'))
     return last_epoch_val_acc
 
-
+def get_device():
+      return 'cuda' if torch.cuda.is_available() else 'cpu'
+  
 if __name__ == '__main__':
-    # 控制起始權重與照片批次順序的不同
+    device = get_device()
+    print("running on {}".format(device))
+    # 控制起始alpha權重(weight)與照片批次順序(image)的不同
+    # 實驗4-2-3
     for k in range(3):
+        # 論文中表4-11
         if k == 0:
             image = 10
             weight = 20
+        # 論文中表4-12
         elif k == 1:
             image = 255
             weight = 278
+        # 論文中表4-13
         else:
             image = 830
             weight = 953

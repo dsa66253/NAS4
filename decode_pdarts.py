@@ -27,7 +27,7 @@ if __name__ == '__main__':
 
             for num in range(3, num_of_epoch + 1, 2):
                 all_alpha_list = np.load(
-                    './alpha_pdart/alpha_prob_' + str(name_number) + '_' + str(num) + '.npy')
+                    './alpha_pdart_nodrop/alpha_prob_' + str(name_number) + '_' + str(num) + '.npy')
 
                 op_list = []
                 # import pdb
@@ -49,7 +49,7 @@ if __name__ == '__main__':
                 if (num == 45) & (cell == 0):
                     max_alphas = np.argmax(all_alpha_list, -1)
                     gene_cell = np.array([np.array([i, j]) for i, j in enumerate(max_alphas)])
-                    genotype_filename = os.path.join('./weights_pdarts/',
+                    genotype_filename = os.path.join('./weights_pdarts_nodrop/',
                                                      'genotype_' + str(name_number))
                     print(genotype_filename)
                     np.save(genotype_filename, gene_cell)
@@ -87,4 +87,4 @@ if __name__ == '__main__':
             autolabel(rects4)
             autolabel(rects5)
             fig.tight_layout()
-            plt.savefig('./weights_pdarts/' + str(name_number) + '_cell_' + str(cell) + '.png')
+            plt.savefig('./weights_pdarts_nodrop/' + str(name_number) + '_cell_' + str(cell) + '.png')

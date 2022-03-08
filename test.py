@@ -13,7 +13,8 @@ from torch.backends import cudnn
 from torch.utils.data import Subset
 from torchvision import transforms, datasets
 from data.config import cfg_newnasmodel
-from models.newmodel_8cell import NewNasModel
+# from models.newmodel_8cell import NewNasModel
+from models.newmodel_5cell import NewNasModel
 from feature.learning_rate import adjust_learning_rate
 from feature.normalize import normalize
 from feature.make_dir import makeDir
@@ -34,7 +35,7 @@ def parse_args(i):
     parser.add_argument('--resume_epoch', default=0, type=int, help='resume iter for retraining')
     parser.add_argument('--weight_decay', default=5e-4, type=float, help='Weight decay for SGD')
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
-    parser.add_argument('--decode_folder', type=str, default='./weights_pdarts',
+    parser.add_argument('--decode_folder', type=str, default='./weights_pdarts_nodrop',
                         help='put the path to resuming file if needed')
     parser.add_argument('--genotype_file', type=str, default='genotype_' + str(i) + '.npy',
                         help='put decode file')
@@ -50,11 +51,11 @@ def test(seed_cpu):
     # choose the training datasets
     test_data = datasets.ImageFolder(test, transform=test_transforms)
 
-    print(test_data.class_to_idx)
+    print("test_data.class_to_idx", test_data.class_to_idx)
 
     # prepare data loaders (combine dataset and sampler)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, num_workers=num_workers, shuffle=False)
-    print(len(test_data))
+    print("test_data length: ", len(test_data))
 
     if os.path.isdir(args.decode_folder):
         genotype_filename = os.path.join(args.decode_folder, args.genotype_file)
@@ -99,8 +100,11 @@ def test(seed_cpu):
         return model
 
     # net and model
+    print("NewNasModel")
     net = NewNasModel(num_classes=num_classes, cell_arch=cell_arch, num_cells=num_cell)
+    print("load_model")
     net = load_model(net, args.trained_model, args.cpu)
+    print("eval")
     net.eval()
     print('Finished loading model!')
     # print(net)

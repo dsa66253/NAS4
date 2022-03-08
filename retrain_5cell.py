@@ -46,7 +46,7 @@ def parse_args(k):
                         help='Location to save checkpoint models')
     parser.add_argument('--log_dir', default='./tensorboard_retrain_pdarts/',
                         help='Location to save logging')
-    parser.add_argument('--decode_folder', type=str, default='./weights_pdarts',
+    parser.add_argument('--decode_folder', type=str, default='./weights_pdarts_nodrop',
                         help='put decode folder')
     parser.add_argument('--genotype_file', type=str, default='genotype_' + str(k) + '.npy',
                         help='put decode file')
@@ -72,7 +72,7 @@ def train(number, seed_img, seed_weight):
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=batch_size, num_workers=num_workers,
                                              shuffle=False)
     print('-------first image------------')
-    print(train_data[0][0])
+    # print(train_data[0][0])
 
     # 確認training dataset的大小
     for batch_x, batch_y in train_loader:
