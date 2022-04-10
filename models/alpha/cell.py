@@ -19,7 +19,12 @@ class MixedOp_conv(nn.Module):
             self._ops.append(op)
 
     def forward(self, x, weights):
-        return sum(w * op(x) for w, op in zip(weights, self._ops) if w != 0)
+        sum = 0
+        for w, op in zip(weights, self._ops): 
+            if w != 0:
+                sum = sum + w * op(x)
+        return sum
+        # return sum(w * op(x) for w, op in zip(weights, self._ops) if w != 0)
 
 
 class Cell_conv(nn.Module):

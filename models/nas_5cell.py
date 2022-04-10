@@ -25,11 +25,11 @@ class NasModel(nn.Module):
         self.min_alpha1 = True
         self.min_alpha2 = True
         self.min_alpha3 = True
-
+    
         # 設定nas架構，訓練5個cell
         #* use this way to dynamically determine network
         self.feature = nn.Sequential()
-        self.feature.add_module('conv_1', cell(3, 96, 4))
+        self.feature.add_module('conv_1', cell(3, 96, 4)) #* inputChannel, outputChannel, stride
         self.feature.add_module('max_pool1', nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
         self.feature.add_module('conv_2', cell(96, 256, 1))
         self.feature.add_module('max_pool2', nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
@@ -59,22 +59,22 @@ class NasModel(nn.Module):
         for name, param in zip(self._arch_param_names, self._arch_parameters)]
 
     # @staticmethod
-    # 當epoch等於所設定要剔除的epoch位置，將cell中最小的alpha值機率變為0
+    # 當epoch等於所設定要剔除的epoch位置，將cell中最小的alpha值對應的mask設True
     def check_min_alpah(self, input, epoch):
         if (epoch == epoch_to_drop[0] and self.min_alpha1):
             for n in range(dropNum[0]):#*only one-iteration loop
                 print(f'Drop min alphas: {epoch}, {epoch_to_drop[0]}')
                 tmp_input_for_min = input[~self.alphas_mask].reshape(self.num_cells, -1)  # ~表示相反
 
-                _, min_indices = tmp_input_for_min.min(1)
+                _, min_indices = tmp_input_for_min.min(1) #* get index of min for each cell
                 next_alphas_mask = self.alphas_mask.clone()
                 next_mask = torch.full(tmp_input_for_min.shape, False, dtype=torch.bool)
                 for i, min_i in zip(range(len(input)), min_indices):  # 把最小的位置變成true
                     next_mask[i, min_i] = True
 
                 next_mask = next_mask.reshape(-1)
-                tmp_next_alphas_mask_mask = next_alphas_mask[~self.alphas_mask].clone()
-                tmp_next_alphas_mask_mask[next_mask] = True
+                tmp_next_alphas_mask_mask = next_alphas_mask[~self.alphas_mask].clone()#* use previous alphas_mask
+                tmp_next_alphas_mask_mask[next_mask] = True #* use previous alphas_mask, and turn specific element to True
                 next_alphas_mask[~self.alphas_mask] = tmp_next_alphas_mask_mask
                 self.alphas_mask = next_alphas_mask
             self.min_alpha1 = False
@@ -118,16 +118,18 @@ class NasModel(nn.Module):
             self.min_alpha3 = False
 
         with torch.no_grad():
-            input[self.alphas_mask] = 0
+            input[self.alphas_mask] = 0 #* 把是true的alphas設為0
         return input
 
     # 讓alpha值過softmax變機率值
+    #* 這樣的寫法，在一個epoch中，會存很多次不同的alphas值，每一次都覆蓋掉前面一次的
     def normalize(self, input, epoch, number, num_cells):
         # print('----------input data---------------')
         # print(input)
-        mask = (input != 0)
+        mask = (input != 0) #* return a tensor that the element is not 0 with element being true false
         new_input = torch.zeros_like(input)
         new_input[mask] += F.softmax(input[mask].reshape(num_cells, -1)).reshape(-1)
+        #* new_input[mask] += F.softmax(input[mask].reshape(num_cells, -1), dim=1).reshape(-1) sepcify dim=1 to solve warning
 
         # print(new_input)
 
@@ -140,33 +142,45 @@ class NasModel(nn.Module):
 
     def forward(self, x, epoch, number, num_cells):
         count_alpha = 0
+
         alpha_new = self.check_min_alpah(self.alphas, epoch) #*model's alpha parameters added via registered_parameter()
         norm_alphas = self.normalize(alpha_new, epoch, number, num_cells)
         x = self.feature.conv_1(x, norm_alphas[count_alpha])
+        print("x.shape1", x.shape)
         count_alpha += 1
         x = self.feature.max_pool1(x)
+        print("x.shapeP1", x.shape)
         x = self.feature.conv_2(x, norm_alphas[count_alpha])
+        print("x.shape2", x.shape)
         count_alpha += 1
         x = self.feature.max_pool2(x)
+        print("x.shapeP2", x.shape)
         x = self.feature.conv_3(x, norm_alphas[count_alpha])
+        print("x.shape3", x.shape)
         count_alpha += 1
         x = self.feature.conv_4(x, norm_alphas[count_alpha])
+        print("x.shape4", x.shape)
         count_alpha += 1
         x = self.feature.conv_5(x, norm_alphas[count_alpha])
+        print("x.shape5", x.shape)
         count_alpha += 1
         x = self.feature.max_pool3(x)
         # print('check size')
         # print(x.size())
+        print("x.shapeP3", x.shape)
         x = x.view(x.size()[0], -1)
+        print("x.shape", x.shape)
         x = self.fc(x)
+        exit()
         assert count_alpha == len(self.alphas)
 
         return x
-
     def nas_parameters(self):
         #* 挑出alpha return出去
         #* parameter name有alpha的都return 出去
+        
         if hasattr(self, '_nas_parameters'):
+            #* 似乎永遠都不會進來這
             return self._nas_parameters
 
         def check_key(k):
@@ -178,6 +192,7 @@ class NasModel(nn.Module):
         self._nas_parameters = {
             v for k, v in self.named_parameters() if check_key(k)
         }
+
         return self._nas_parameters
 
     def model_parameters(self):

@@ -91,6 +91,7 @@ add parameter to a model
 https://stackoverflow.com/questions/59234238/how-to-add-parameters-in-module-class-in-pytorch-custom-model
 
 ## zip() in ./models/nas_5cell.py
+it seems like simplified nested loop
 https://ithelp.ithome.com.tw/articles/10218029
 
 
@@ -98,3 +99,48 @@ https://ithelp.ithome.com.tw/articles/10218029
 這兩個搭配起來可以讓layer可以自定義名稱，之後update參數時會用這個來決定是alpha or weight
 https://pytorch.org/docs/stable/generated/torch.nn.Module.html
 https://pytorch.org/docs/stable/generated/torch.nn.Sequential.html
+
+
+## np.save() in ./models/nas_5cell.py
+save np array for future use via nbp.load, which can get the previously saved np array 
+https://ithelp.ithome.com.tw/articles/10196167
+
+
+
+## module.modules() ./models/alpha/operation.py
+return a list containing each submodule recurssively
+https://blog.csdn.net/LXX516/article/details/79016980
+
+## nn.Parameter() in ./nas_5cell.py
+nn.Parameter(tensor) transfer a Tensor into Parameter type which can be registered a parameter of a model, and can be optimized.
+https://pytorch.org/docs/stable/generated/torch.nn.parameter.Parameter.html#torch.nn.parameter.Parameter
+https://www.1024sou.com/article/228368.html
+
+## update element of a tensor
+PyTorch doesn’t allow in-place operations on leaf variables that have requires_grad=True
+eg.
+    with torch.no_grad():
+    x2 = x.clone()  # clone the variable
+    x2 += 1  # in-place operation
+https://discuss.pytorch.org/t/leaf-variable-was-used-in-an-inplace-operation/308/2
+
+
+## clone().detach() how to copy a tensor as a new object
+clone(): return a new tensor object with the same content with grad=False, and can trace back
+detach() to make returned tensor not trace back, because tracek back back is useless in this situation
+https://stackoverflow.com/questions/55266154/pytorch-preferred-way-to-copy-a-tensor
+
+
+## RuntimeError: CUDA out of memory. Tried to allocate 2.0 GiB.
+https://clay-atlas.com/blog/2020/06/16/pytorch-cn-runtimeerror-cuda-out-of-memory/
+
+## draw bar diagram with matplotlib in ./decade_pdarts.py
+https://matplotlib.org/3.5.0/api/_as_gen/matplotlib.axes.Axes.bar.html#matplotlib.axes.Axes.bar
+
+
+## RuntimeError: Input type (torch.cuda.FloatTensor) and weight type (torch.FloatTensor) should be the same
+input = input.to(device) correct!
+input.to(device) incorrect!
+tensor.to() is NOT inplcae opertation 
+
+## in forward function, don't use inplace operation. That will cause computation graph error

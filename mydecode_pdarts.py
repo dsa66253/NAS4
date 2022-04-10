@@ -17,8 +17,38 @@ def pickSecondMax(input):
     alphasSecondMaxIndex = np.argmax(alphas, -1)
 
     return alphasSecondMaxIndex
-    
 
+def loadAllAlphas():
+    listAlphas = []
+    epoch = 45
+    for epoch in range(epoch):
+        tmp = np.load("./alpha_pdart_nodrop/alpha_prob_0_{}.npy".format(epoch))
+        listAlphas.append(tmp)
+    return listAlphas
+
+def loadAlphasAtEpoch(kth, epoch):
+    return  np.load("./alpha_pdart_nodrop/alpha_prob_{}_{}.npy".format(str(kth), str(epoch)))
+def decodeAlphas(kth):
+    #* get index of innercell which hase greatest alphas value
+    genotype_filename = os.path.join('./weights_pdarts_nodrop/',
+                        'genotype_' + str(kth))
+    lastEpoch = 44
+    lastAlphas = loadAlphasAtEpoch(kth, lastEpoch)
+    maxAlphasIndex = np.argmax(lastAlphas, -1)
+    np.save(genotype_filename, maxAlphasIndex)
+    # print("finish decode and save genotype:", maxAlphasIndex)
+    return maxAlphasIndex
+    
+    
+    
+if __name__ == '__main__':
+
+    for kth in range(5):
+        print(decodeAlphas(kth))
+
+        
+
+exit()
 if __name__ == '__main__':
     # 實驗三種不同的初始權重與照片批次順序
     for i in range(3):

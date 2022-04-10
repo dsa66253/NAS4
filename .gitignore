@@ -2,3 +2,9 @@
 tensorboard_pdarts_nodrop/
 weights_pdarts_nodrop/
 dataset1/
+tensorboard_pdarts_nodrop/
+tensorboard_retrain_pdarts/
+weights_retrain_pdarts/
+log/
+saved_mask_per_epoch/
+alpha_pdart_nodrop/

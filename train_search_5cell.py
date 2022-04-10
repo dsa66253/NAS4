@@ -110,7 +110,7 @@ def train(number, seed_img, seed_weight):
     cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
     
     writer = SummaryWriter(log_dir=args.log_dir,
-                           comment="LR_%.3f_BATCH_%d".format(initial_lr, batch_size))
+                        comment="LR_%.3f_BATCH_%d".format(initial_lr, batch_size))
     net.train()
 
     epoch = 0 + args.resume_epoch
@@ -247,8 +247,8 @@ def train(number, seed_img, seed_weight):
     return last_epoch_val_acc
 
 def get_device():
-      return 'cuda' if torch.cuda.is_available() else 'cpu'
-  
+    return 'cuda' if torch.cuda.is_available() else 'cpu'
+
 if __name__ == '__main__':
     device = get_device()
     print("running on {}".format(device))

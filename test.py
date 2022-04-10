@@ -14,10 +14,12 @@ from torch.utils.data import Subset
 from torchvision import transforms, datasets
 from data.config import cfg_newnasmodel
 # from models.newmodel_8cell import NewNasModel
-from models.newmodel_5cell import NewNasModel
+# from models.newmodel_5cell import NewNasModel
+from models.mynewmodel_5cell import NewNasModel
 from feature.learning_rate import adjust_learning_rate
 from feature.normalize import normalize
 from feature.make_dir import makeDir
+from feature.utility import setStdoutToFile, setStdoutToDefault
 from feature.random_seed import set_seed_cpu, set_seed_gpu
 
 
@@ -101,12 +103,12 @@ def test(seed_cpu):
 
     # net and model
     print("NewNasModel")
-    net = NewNasModel(num_classes=num_classes, cell_arch=cell_arch, num_cells=num_cell)
+    net = NewNasModel(5, 2, numOfClasses=num_classes, cellArch=cell_arch)
     print("load_model")
     net = load_model(net, args.trained_model, args.cpu)
     print("eval")
     net.eval()
-    print('Finished loading model!')
+    # print('Finished loading model!')
     # print(net)
     cudnn.benchmark = True
     device = torch.device("cpu" if args.cpu else "cuda")
@@ -131,7 +133,13 @@ def test(seed_cpu):
 
 
 if __name__ == '__main__':
-    for i in range(3):
+    
+    for i in range(5):
+        #info handle stdout to a file
+        trainLogDir = "./log"
+        makeDir(trainLogDir)
+        f = setStdoutToFile(trainLogDir+"/test_py_{}th".format(str(i)))
+        
         args = parse_args(str(i))
         # makeDir(args.save_folder, args.log_dir)
         cfg = None
@@ -142,7 +150,6 @@ if __name__ == '__main__':
             sys.exit(0)
 
         num_classes = 10
-        num_cell = 5
 
         img_dim = cfg['image_size']
         num_gpu = cfg['ngpu']
@@ -158,4 +165,7 @@ if __name__ == '__main__':
 
         seed_cpu = 28
         set_seed_cpu(seed_cpu)
+        
         test(seed_cpu)
+        
+        setStdoutToDefault(f)

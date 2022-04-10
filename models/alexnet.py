@@ -22,7 +22,7 @@ class Baseline(nn.Module):
         )
         self.classifier = nn.Sequential(
             nn.Dropout(),
-            nn.Linear(256 * 5 * 5, 4096),
+            nn.Linear(256 * 2 * 2, 4096),
             nn.ReLU(inplace=True),
             nn.Dropout(),
             nn.Linear(4096, 4096),
@@ -32,6 +32,8 @@ class Baseline(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        x = x.view(x.size(0), 256 * 5 * 5)  # 开始全连接层的计算
+        # x = x.view(x.size(0), 256 * 5 * 5)  # 开始全连接层的计算
+        # print("x.shape", x.shape)
+        x = torch.flatten(x, start_dim=1)
         x = self.classifier(x)
         return x
