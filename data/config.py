@@ -10,7 +10,7 @@ cfg_alexnet = {
     'epoch': 100,
     'decay1': 70,
     'decay2': 90,
-    'image_size': 400,
+    'image_size': 128,
     'pretrain': False,
     'in_channel': 8,
     'out_channel': 64
@@ -22,12 +22,12 @@ cfg_nasmodel = {
     'loc_weight': 1.0,
     'gpu_train': True,
     'batch_size': 64,
-    'start_train_nas_epoch': 5,
+    'start_train_nas_epoch': 0,
     'ngpu': 1,
     'epoch': 45,
     'decay1': 70,
     'decay2': 90,
-    'image_size': 224,
+    'image_size': 128,
     'pretrain': False,
     'in_channel': 8,
     'out_channel': 64
@@ -44,13 +44,13 @@ cfg_newnasmodel = {
     'epoch2': 25,
     'decay1': 70,
     'decay2': 90,
-    'image_size': 224,
+    'image_size': 128,
     'pretrain': False,
     'in_channel': 8,
     'out_channel': 64
 }
 
-epoch_to_drop = [1, 25, 35] #在第幾個epoch要使用剔除機制
+epoch_to_drop = [10, 25, 35] #在第幾個epoch要使用剔除機制
 dropNum = [1, 1, 1] #在特定epoch剔除1個最小alpha的操作
 
 PRIMITIVES = [

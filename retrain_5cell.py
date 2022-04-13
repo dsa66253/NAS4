@@ -8,7 +8,7 @@ import random
 from pathlib import Path
 import torch
 import torch.optim as optim
-import torch.backends.cudnn as cudnn
+# import torch.backends.cudnn as cudnn
 import argparse
 import torch.utils.data as data
 from PIL import ImageFile
@@ -34,6 +34,7 @@ from tqdm import tqdm
 from models.mynewmodel_5cell import NewNasModel
 from feature.utility import setStdoutToFile, setStdoutToDefault, getCurrentTime
 stdoutTofile = True
+accelerateButUndetermine = False
 
 def parse_args(k):
     parser = argparse.ArgumentParser(description='imagenet nas Training')
@@ -106,7 +107,7 @@ def myTrain(number, seed_img, seed_weight):
 
 
 
-    cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
+    # cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
 
     # print("Training with learning rate = %f, momentum = %f, lambda = %f " % (initial_lr, momentum, weight_decay))
     #info other setting
@@ -253,7 +254,7 @@ def train(number, seed_img, seed_weight):
     else:
         net = net.cuda()
 
-    cudnn.benchmark = True
+    # cudnn.benchmark = True
 
     print("Training with learning rate = %f, momentum = %f, lambda = %f " % (initial_lr, momentum, weight_decay))
 
@@ -410,8 +411,8 @@ if __name__ == '__main__':
         gamma = args.gamma
         save_folder = args.save_folder
 
-        torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = accelerateButUndetermine
+        torch.backends.cudnn.deterministic = not accelerateButUndetermine
 
         seed_img = image
         seed_weight = weight
@@ -432,5 +433,5 @@ if __name__ == '__main__':
         if stdoutTofile:
             print('result:', str(val_1), str(val_2), str(val_3))
             setStdoutToDefault(f)
-        
+        exit()
     print('result:', str(val_1), str(val_2), str(val_3))

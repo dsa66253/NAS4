@@ -8,42 +8,24 @@ class Layer(nn.Module):
         super(Layer, self).__init__()
         self.numOfInnerCell = numOfInnerCell
         self.layer = layer
-        # self.initializeAlphas()
-        self.minAlpha1 = True
-        self.minAlpha2 = True
-        self.minAlpha3 = True
         self.inputChannel = inputChannel
         self.outputChannel = outputChannel
-        # self.opList = nn.ModuleDict({
-        #     'conv_'+str(layer)+'_1': cell(3, 96, 4),
-        #     'max_pool_'+str(layer)+'_1': nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-        #     'conv_'+str(layer)+'_2': cell(96, 256, 1),
-        #     'max_pool_'+str(layer)+'_2': nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-        #     'conv_'+str(layer)+'_3': cell(256, 384, 1),
-        #     'conv_'+str(layer)+'_4': cell(384, 384, 1),
-        #     'conv_'+str(layer)+'_5': cell(384, 256, 1),
-        #     'max_pool_'+str(layer)+'_3': nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        # })
         #info two innerCells per layer 
-        self.opList = nn.ModuleDict({
+        self.innerCellList = nn.ModuleDict({
             'innerCell_'+str(layer)+'_0': cell(inputChannel, outputChannel, stride),
             # 'innerCell_'+str(layer)+'_1': cell(inputChannel, outputChannel, stride),
         })
     def forward(self, input, alphas):
+
         indexOfInnerCell = 0
         output = 0
-        for name in self.opList:
+        for name in self.innerCellList:
             # add each inner cell directly without alphas involved
-            output = output + self.opList[name](input, alphas[indexOfInnerCell])
+            output = output + self.innerCellList[name](input, alphas[indexOfInnerCell])
             indexOfInnerCell = indexOfInnerCell + 1
+            print("innerCellList{} output".fomrat(name), output)
+
         return output
-    
-    def test(self):
-        print("length", len(self.opList))
-        index = 0
-        for name in self.opList:
-            print(index, name,  self.opList[name])
-            index = index + 1
     
 class Conv(nn.Module):
     def __init__(self, C_in, C_out, kernel_size, stride, padding, affine):

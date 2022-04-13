@@ -1,0 +1,12 @@
+python train_nas.py
+python train_nas.py
+python train_nas.py
+python handleFileName.py
+python mydecode_pdarts.py
+python retrain_5cell.py
+python handleFileName.py
+python mydecode_pdarts.py
+python retrain_5cell.py
+python handleFileName.py
+python mydecode_pdarts.py
+python retrain_5cell.py

@@ -3,12 +3,61 @@
 from re import M
 import torch
 import torch.nn as nn
-from layer import Layer
+# from layer import Layer
 from data.config import epoch_to_drop
 import torch.nn.functional as F
 import os
 import numpy as np
 from feature.utility import getCurrentTime1 as getCurrentTime
+from models.alpha.cell import Cell_conv
+#info Cell_conv actually is innerCell
+class Layer(nn.Module):
+    def __init__(self, numOfInnerCell, layer, inputChannel=3, outputChannel=96, stride=1, padding=1,  cell=Cell_conv):
+        super(Layer, self).__init__()
+        self.numOfInnerCell = numOfInnerCell
+        self.layer = layer
+        self.inputChannel = inputChannel
+        self.outputChannel = outputChannel
+        #info two innerCells per layer 
+        self.innerCellList = nn.ModuleDict({
+            'innerCell_'+str(layer)+'_0': cell(inputChannel, outputChannel, stride),
+            # 'innerCell_'+str(layer)+'_1': cell(inputChannel, outputChannel, stride),
+        })
+    def forward(self, input, alphas):
+
+        indexOfInnerCell = 0
+        output = 0
+        for name in self.innerCellList:
+            # add each inner cell directly without alphas involved
+            output = output + self.innerCellList[name](input, alphas[indexOfInnerCell])
+            indexOfInnerCell = indexOfInnerCell + 1
+            # print("innerCellList{} output".format(name), output)
+
+        return output
+    
+class Conv(nn.Module):
+    def __init__(self, C_in, C_out, kernel_size, stride, padding, affine):
+        super(Conv, self).__init__()
+        self.op = nn.Sequential(
+            nn.Conv2d(C_in, C_out, kernel_size, stride, padding),
+            # nn.BatchNorm2d(C_out, affine=affine),
+            # nn.ReLU(inplace=False),
+        )
+        self._initialize_weights() #* initialize kernel weights
+
+    def forward(self, x):
+        return self.op(x)
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                torch.nn.init.kaiming_normal_(m.weight)
+            elif isinstance(m, nn.BatchNorm2d):
+                if m.weight is not None:
+                    m.weight.data.fill_(1)
+                    m.bias.data.zero_()
+
+
 class Model(nn.Module):
     def __init__(self, numOfLayer, numOfInnerCell, numOfClasses):
         super(Model, self).__init__()
@@ -98,6 +147,7 @@ class Model(nn.Module):
     def normalizeAlphas(self):
         #* set alphas to zero whose mask is true and pass it through softmax
         tmp = self.alphas.clone().detach()
+
         with torch.no_grad():
             #*inplace operation
             self.alphas *= 0
@@ -105,6 +155,7 @@ class Model(nn.Module):
             # self.alphas= tmp #! this may cause optimizer will update old object
             # self.alphas = torch.nn.Parameter(tmp)
         # print("normalize alphas", self.alphas)
+
     def filtAlphas(self):
         #* set alphas to zero whose mask is true
         # tmp = self.alphas.clone().detach()
@@ -120,9 +171,10 @@ class Model(nn.Module):
         return  epoch in epoch_to_drop
     def forward(self, input, epoch, kthSeed):
         #* every time use alphas need to set alphas to 0 which has been drop
-        self.filtAlphas()
+        # self.filtAlphas()
 
         output = self.layerDict["layer_0"](input, self.alphas[0])
+        # print("output layer_0", output)
         output = self.layerDict["layer_1"](output, self.alphas[1])
         output = self.layerDict["max_pool1"](output)
         output = self.layerDict["layer_2"](output , self.alphas[2])
@@ -130,12 +182,17 @@ class Model(nn.Module):
         output = self.layerDict["max_pool2"](output)
         output = self.layerDict["layer_4"](output , self.alphas[4])
         output = self.layerDict["layer_5"](output , self.alphas[5])
+        # print("self.layerDict[layer_5](output , self.alphas[5])", output)
         #! 先關閉layer3 layer4 增加訓練速度
         output = self.layerDict["layer_6"](output , self.alphas[6])
+        # print("self.layerDict[layer_6](output , self.alphas[6]", output)
         output = self.layerDict["layer_7"](output , self.alphas[7])
+        # print("self.layerDict[layer_67](output , self.alphas[7]", output)
         output = self.layerDict["layer_8"](output , self.alphas[8])
+        # print("self.layerDict[layer_8](output , self.alphas[8]", output)
         output = self.layerDict["layer_9"](output , self.alphas[9])
         output = self.layerDict["max_pool3"](output)
+        # print("self.layerDict[max_pool3](output)", output)
         # print("tensor with shape{} is going to fc".format(output.shape))
         output = torch.flatten(output, start_dim=1)
         # print("tensor with shape{} is going to fc".format(output.shape))

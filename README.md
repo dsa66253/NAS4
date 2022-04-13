@@ -144,3 +144,15 @@ input.to(device) incorrect!
 tensor.to() is NOT inplcae opertation 
 
 ## in forward function, don't use inplace operation. That will cause computation graph error
+
+##　how to reproduce training result and accelerate the training process?
+seed = 123
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+np.random.seed(seed)
+random.seed(seed)
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+https://pytorch.org/docs/stable/notes/randomness.html
+https://clay-atlas.com/blog/2020/09/26/pytorch-cn-set-random-seed-reproduce-result/

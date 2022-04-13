@@ -32,7 +32,7 @@ def decodeAlphas(kth):
     #* get index of innercell which hase greatest alphas value
     genotype_filename = os.path.join('./weights_pdarts_nodrop/',
                         'genotype_' + str(kth))
-    lastEpoch = 44
+    lastEpoch = 43
     lastAlphas = loadAlphasAtEpoch(kth, lastEpoch)
     maxAlphasIndex = np.argmax(lastAlphas, -1)
     np.save(genotype_filename, maxAlphasIndex)
@@ -43,7 +43,7 @@ def decodeAlphas(kth):
     
 if __name__ == '__main__':
 
-    for kth in range(5):
+    for kth in range(3):
         print(decodeAlphas(kth))
 
         

@@ -110,7 +110,7 @@ def test(seed_cpu):
     net.eval()
     # print('Finished loading model!')
     # print(net)
-    cudnn.benchmark = True
+    # cudnn.benchmark = True
     device = torch.device("cpu" if args.cpu else "cuda")
     net = net.to(device)
 
@@ -134,7 +134,7 @@ def test(seed_cpu):
 
 if __name__ == '__main__':
     
-    for i in range(5):
+    for i in range(1):
         #info handle stdout to a file
         trainLogDir = "./log"
         makeDir(trainLogDir)

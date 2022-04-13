@@ -7,7 +7,8 @@ from pathlib import Path
 import torch
 import argparse
 import torch.optim as optim
-import torch.backends.cudnn as cudnn
+# import torch.backends.cudnn as cudnn
+
 import torch.utils.data as data
 import torch.nn as nn
 import datetime
@@ -36,9 +37,9 @@ from tqdm import tqdm
 import datetime
 from model import Model
 from data.config import epoch_to_drop
-from feature.utility import getCurrentTime, setStdoutToDefault, setStdoutToFile
+from feature.utility import getCurrentTime, getCurrentTime1, setStdoutToDefault, setStdoutToFile
 stdoutTofile = True
-
+accelerateButUndetermine = False
 
 def get_device():
     return 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -88,7 +89,7 @@ def prepareModelAndOpti(seed_weight):
         optimizer = optim.SGD(net.parameters(), lr=initial_lr, momentum=momentum, weight_decay=weight_decay)
         return net, optimizer
     elif cfg['name'] == 'NasModel':
-        set_seed_cpu(seed_weight)  # 固定初始權重
+        # set_seed_cpu(seed_weight)  # 固定初始權重
         net = NasModel(num_classes, num_cells)  # 進入nas model
         model_optimizer = optim.SGD(net.model_parameters(), lr=initial_lr, momentum=momentum,
                                     weight_decay=weight_decay)
@@ -99,6 +100,11 @@ def prepareModelAndOpti(seed_weight):
 def printNetWeight(net):
     for name, para in net.named_parameters():
         print(name, para)
+
+
+    
+    
+    
     
 def myTrain(number, seed_img, seed_weight):
     #info prepare dataset
@@ -127,9 +133,11 @@ def myTrain(number, seed_img, seed_weight):
         # print(net)
         optimizer = optim.SGD(net.parameters(), lr=initial_lr, momentum=momentum, weight_decay=weight_decay)
     elif cfg['name'] == 'NasModel':
-        set_seed_cpu(seed_weight)  # 固定初始權重
+        # set_seed_cpu(seed_weight)  # 固定初始權重
         # net = NasModel(num_classes, num_cells)  # 進入nas models
         net = Model(10, 1, 10) # Model(numOfLayer, numOfInnerCell, numOfClasses)
+        #! move to cuda before assign net's parameters to optim, otherwise, net on cpu will slow training speed
+        net = net.to(device)
         model_optimizer = optim.SGD(net.getWeight(), lr=initial_lr, momentum=momentum,
                                     weight_decay=weight_decay)
         nas_optimizer = optim.Adam(net.getAlphas(), lr=nas_initial_lr, weight_decay=weight_decay)
@@ -149,11 +157,11 @@ def myTrain(number, seed_img, seed_weight):
     # writer = SummaryWriter()
     writer = SummaryWriter(log_dir=args.log_dir,
             comment="LR_%.3f_BATCH_%d".format(initial_lr, batch_size))
-    cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
+    # cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
     print("start to train...")
     #! move device to cuda before assign net's parameters to optim
-    net = net.to(device)
     net.train()
+    print("minibatch size: ", epoch_size)
     #info start training loop
     for iteration in tqdm(range(start_iter, max_iter), unit =" iterations on {}".format(number)):
         #TODO clearify what's the procedure of experiment
@@ -163,6 +171,7 @@ def myTrain(number, seed_img, seed_weight):
         #     print("net.alphas at iteration",iteration ,"epoch", epoch, net.alphas)
         # print("\ncurrent alphas id {} at epoch{}".format(id(net.alphas), epoch))
         # finish an epoch
+        print("begin iteration", iteration, " net.Alphas", net.alphas)
         if iteration % epoch_size == 0:
             print("start training epoch{}...".format(epoch))
             # create batch iterator
@@ -176,7 +185,8 @@ def myTrain(number, seed_img, seed_weight):
                 if epoch in epoch_to_drop:
                     net.dropMinAlpha()
                 
-                printNetWeight(net)
+                # printNetWeight(net)
+                
             # 每10個EPOCH存一次權重
             if (epoch % 10 == 0 and epoch > 0) or (epoch % 10 == 0 and epoch > cfg['decay1']):
                 torch.save(
@@ -186,8 +196,6 @@ def myTrain(number, seed_img, seed_weight):
                         cfg['name'] + '_' + str(number) + '_epoch_' + str(epoch) + '.pth'
                     ),
                 )
-
-            epoch += 1
 
         load_t0 = time.time()
         # if iteration in stepvalues:
@@ -213,11 +221,10 @@ def myTrain(number, seed_img, seed_weight):
         val_images = val_images.to(device)
         val_labels = val_labels.to(device)
 
-        # backprop
+        
         if args.network == 'nasmodel':
             model_optimizer.zero_grad()
             nas_optimizer.zero_grad()
-            # print("zero grad", net.alphas.grad)
         else:
             optimizer.zero_grad()
         
@@ -231,7 +238,17 @@ def myTrain(number, seed_img, seed_weight):
         train_loss = criterion(train_outputs, train_labels)
         # 反向傳播
         train_loss.backward()
-
+        #! alphas 在訓練中差異性很大
+        #! alphas.grad不同，backward()之後就不同
+        #! 查看一下當下的loss
+        #! loss不同
+        #! 檢查一下 input and model weight and alphas
+        #! 在一次執行當中，不同my train loop，alphas.grad都是一樣的
+        #! training input 都一樣
+        
+        # print("epoch >= cfg['start_train_nas_epoch']", epoch >= cfg['start_train_nas_epoch'])
+        # print("(epoch - cfg['start_train_nas_epoch']) % 2 == 0", (epoch - cfg['start_train_nas_epoch']) % 2 == 0)
+        # print("epoch", epoch, "cfg['start_train_nas_epoch']", cfg['start_train_nas_epoch'])
         # 交替訓練
         # print("(epoch - cfg['start_train_nas_epoch']) % 2 == 1", (epoch - cfg['start_train_nas_epoch']) % 2 == 1)
         if args.network == 'nasmodel':
@@ -240,7 +257,11 @@ def myTrain(number, seed_img, seed_weight):
                     # print("nas_optimizer.step()")
                     # print("before", id(net.alphas), net.alphas[0], net.alphas[0].grad)
                     # print("nas_optimizer.step()")
+                    print("train_loss ", train_loss)
+                    # print("net.alphas.grad after backward()", net.alphas.grad)
+                    print("nas_optimizer.step()")
                     nas_optimizer.step()
+                    print("net.alphas after step()", net.alphas)
                     # print("after", id(net.alphas),  net.alphas[0])
                 else:
 
@@ -269,7 +290,7 @@ def myTrain(number, seed_img, seed_weight):
         _, predicts_val = torch.max(val_outputs.data, 1)
         val_loss = criterion(val_outputs, val_labels)
         # record_val_loss.append(val_loss.item())
-
+        # print("end iteration", iteration, " net.Alphas", net.alphas)
         # 計算訓練集準確度
         total_images = 0
         correct_images = 0
@@ -300,12 +321,18 @@ def myTrain(number, seed_img, seed_weight):
         writer.add_scalar('train_Acc/k='+str(number), 100 * correct_images / total_images, iteration + 1)
         writer.add_scalar('val_Acc/k='+str(number), 100 * correct_images_val / total_images_val, iteration + 1)
         last_epoch_val_acc = 100 * correct_images_val / total_images_val
+        if iteration==70:
+            pass
+            # exit()
+        if (iteration % epoch_size == 0) and (iteration != 0):
+            epoch = epoch + 1
 
 
     # writer.add_graph(net)
     writer.close()
     torch.save(net.state_dict(), os.path.join(save_folder, cfg['name'] + str(number) + '_Final.pth'))
     return last_epoch_val_acc
+
 
 def train(number, seed_img, seed_weight):
     PATH_train = r"./dataset1/train"  # 讀取照片
@@ -356,7 +383,7 @@ def train(number, seed_img, seed_weight):
         # net = net.cuda() # original code
         net = net.to(device)
 
-    cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
+    # cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
     
     # writer = SummaryWriter(log_dir=args.log_dir,
     #                     comment="LR_%.3f_BATCH_%d".format(initial_lr, batch_size))
@@ -556,7 +583,7 @@ def myTrain1(number, seed_img, seed_weight):
     # writer = SummaryWriter()
     writer = SummaryWriter(log_dir=args.log_dir,
             comment="LR_%.3f_BATCH_%d".format(initial_lr, batch_size))
-    cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
+    # cudnn.benchmark = True # set True to accelerate training process automanitcally by inbuild algo
     print("start to train...")
     #! move device to cuda before assign net's parameters to optim
     net = net.to(device)
@@ -686,15 +713,17 @@ def myTrain1(number, seed_img, seed_weight):
 
 if __name__ == '__main__':
     device = get_device()
+    torch.device(device)
     print("running on device: {}".format(device))
     # 控制起始alpha權重(weight)與照片批次順序(image)的不同
     # 實驗4-2-3
-
-    for k in range(4, 5):
+    torch.set_printoptions(precision=6, sci_mode=False, threshold=1000)
+    torch.set_default_dtype(torch.float32) #* torch.float will slow the training speed
+    for k in range(3):
         if stdoutTofile:
             trainLogDir = "./log"
             makeDir(trainLogDir)
-            f = setStdoutToFile(trainLogDir+"/train_nas_5cell_py_{}th.txt".format(str(k)))
+            f = setStdoutToFile(trainLogDir+"/train_nas_5cell_py_{}th{}.txt".format(str(k), getCurrentTime1()))
         # 論文中表4-11
         if k == 0:
             image = 10
@@ -728,7 +757,7 @@ if __name__ == '__main__':
             sys.exit(0)
 
         num_classes = 10  # 分類class數
-        num_cells = 5  # nas model要訓練的cell數目
+        num_cells = 10  # nas model要訓練的cell數目
 
         img_dim = cfg['image_size']
         num_gpu = cfg['ngpu']
@@ -743,21 +772,24 @@ if __name__ == '__main__':
         nas_initial_lr = args.nas_lr
         gamma = args.gamma
         save_folder = args.save_folder
-
-        torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.deterministic = True
+        #! set to false can reproduce training result
+        #! while set to true will fasten training process but to gaurantee same training result
+        torch.backends.cudnn.benchmark = accelerateButUndetermine
+        torch.backends.cudnn.deterministic = not accelerateButUndetermine
+        # torch.use_deterministic_algorithms(True)
+        
         seed_img = image
         seed_weight = weight
 
-        set_seed_cpu(seed_img)  # 控制照片批次順序
+        set_seed_cpu(seed_weight)  # 控制照片批次順序
         print("seed_img{}, seed_weight{} start at ".format(seed_img, seed_weight), getCurrentTime())
         myTrain(k, seed_img, seed_weight)  # 進入model訓練
-
+        
         print("seed_img{}, seed_weight{} done at ".format(seed_img, seed_weight), getCurrentTime())
         # train(k, seed_img, seed_weight)  # 進入model訓練
         if stdoutTofile:
             setStdoutToDefault(f)
-            
+        exit()
         # exit() #* for examine why same initial value will get different trained model
         
         # train_loader, val_loader = prepareDataloader()
