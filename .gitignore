@@ -8,3 +8,8 @@ weights_retrain_pdarts/
 log/
 saved_mask_per_epoch/
 alpha_pdart_nodrop/
+nasSavedModel/
+retrainSavedModel/
+plot/
+savedCheckPoint/
+tmp/

@@ -4,17 +4,7 @@ import os
 from models.alpha.operation import OPS
 # from data.config import PRIMITIVES
 import numpy as np
-#* 10 layers, one inner cell per layer
 #info experiment 0405: two parallel innercell
-
-class Cell_conv(nn.Module):
-    def __init__(self, c_in, c_out, stride=1):
-        super().__init__()
-        # self.mix_op = MixedOp_conv(c_in, c_out, stride)
-
-    def forward(self, x, weights):
-        y = self.mix_op(x, weights)  # x is input , weights is alpha value
-        return y
 
 
 class InnerCell(nn.Module):
@@ -26,8 +16,7 @@ class InnerCell(nn.Module):
         #todo maybe make it a dictionary layer_i_j_convName
         #info make operations to a list according cellArchPerIneerCell
         self.opList = nn.ModuleList()
-        for convName in self.cellArchPerIneerCell:
-            self.opList.append(OPS[convName](inputChannel, outputChannel, stride, False, False))
+        self.opList.append(OPS[self.cellArchPerIneerCell](inputChannel, outputChannel, stride, False, False))
         
     def forward(self, input):
         #info add each output of operation element-wise
@@ -44,22 +33,31 @@ class Layer(nn.Module):
         super(Layer, self).__init__()
         #info set private attribute
         self.name = "layer_"+str(layer)
-        self.cellArchPerLayer = cellArchPerLayer
+        self.numOfInnerCell = numOfInnerCell
+        self.layer = layer
+        self.inputChannel = inputChannel
+        self.outputChannel = outputChannel
+        
         #todo according cellArch, dynamically create dictionary, and pass it to ModuleDict
         #info set inner cell
         self.innerCellDic = nn.ModuleDict({
-            'innerCell_'+str(layer)+'_0': InnerCell(inputChannel, outputChannel, stride, self.cellArchPerLayer[0])
+            'innerCell_'+str(layer)+'_0': InnerCell(inputChannel, outputChannel//self.numOfInnerCell, stride, self.cellArchPerLayer[0]),
+            'innerCell_'+str(layer)+'_1': InnerCell(inputChannel, outputChannel//self.numOfInnerCell, stride, self.cellArchPerLayer[1])
         })
     
     def forward(self, input):
-        #* add each inner cell directly as layer's output without alphas involved
+        #* concate innerCell's output instead of add them elementwise
         indexOfInnerCell = 0
         output = 0
-        
         for name in self.innerCellDic:
-            # add each inner cell directly as layer's output without alphas involved
-            output = output + self.innerCellDic[name](input)
+            # add each inner cell directly without alphas involved
+            if indexOfInnerCell == 0:
+                output = self.innerCellDic[name](input)
+            else:
+                output = torch.cat( (output, self.innerCellDic[name](input) ), dim=1 )
+
             indexOfInnerCell = indexOfInnerCell + 1
+            # print("innerCellList{} output".format(name), output)
         return output
     
 class NewNasModel(nn.Module):
@@ -76,23 +74,18 @@ class NewNasModel(nn.Module):
         # print("self.cellArchTrans", self.cellArchTrans)
         #info network structure
         self.layerDict = nn.ModuleDict({
-            "layer_0":Layer(self.numOfInnerCell, 0, self.cellArchTrans, 3, 96, 4),
-            "layer_1":Layer(self.numOfInnerCell, 1, self.cellArchTrans, 96, 96, 4),
-            "layer_2":Layer(self.numOfInnerCell, 2, self.cellArchTrans, 96, 256, 1),
-            "layer_3":Layer(self.numOfInnerCell, 3, self.cellArchTrans, 256, 256, 1),
-            "layer_4":Layer(self.numOfInnerCell, 4, self.cellArchTrans, 256, 384, 1),
-            "layer_5":Layer(self.numOfInnerCell, 5, self.cellArchTrans, 384, 384, 1),
-            "layer_6":Layer(self.numOfInnerCell, 6, self.cellArchTrans, 384, 384, 1),
-            "layer_7":Layer(self.numOfInnerCell, 7, self.cellArchTrans, 384, 384, 1),
-            "layer_8":Layer(self.numOfInnerCell, 8, self.cellArchTrans, 384, 256, 1),
-            "layer_9":Layer(self.numOfInnerCell, 9, self.cellArchTrans, 256, 256, 1),
+            "layer_0":Layer(self.numOfInnerCell, 0, self.cellArchTrans[0], 3, 96, 4),
+            "layer_1":Layer(self.numOfInnerCell, 2, self.cellArchTrans[1], 96, 256, 1),
+            "layer_2":Layer(self.numOfInnerCell, 4, self.cellArchTrans[2], 256, 384, 1),
+            "layer_3":Layer(self.numOfInnerCell, 6, self.cellArchTrans[3], 384, 384, 1),
+            "layer_4":Layer(self.numOfInnerCell, 8, self.cellArchTrans[4], 384, 256, 1),
             "max_pool1":nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
             "max_pool2": nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
             'max_pool3': nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         })
         
         self.fc = nn.Sequential(
-            nn.Linear(256 * 1 * 1, 4096),
+            nn.Linear(256 * 4 * 4, 4096),
             nn.ReLU(inplace=True),
             nn.Linear(4096, 2048),
             nn.ReLU(inplace=True),
@@ -102,17 +95,12 @@ class NewNasModel(nn.Module):
         # print("next(model.parameters()).is_cuda", next(self.parameters()).is_cuda)
         # print(input.shape)
         output = self.layerDict["layer_0"](input)
-        output = self.layerDict["layer_1"](output)
         output = self.layerDict["max_pool1"](output)
+        output = self.layerDict["layer_1"](output)
+        output = self.layerDict["max_pool2"](output)
         output = self.layerDict["layer_2"](output)
         output = self.layerDict["layer_3"](output)
-        output = self.layerDict["max_pool2"](output)
         output = self.layerDict["layer_4"](output)
-        output = self.layerDict["layer_5"](output)
-        output = self.layerDict["layer_6"](output)
-        output = self.layerDict["layer_7"](output)
-        output = self.layerDict["layer_8"](output)
-        output = self.layerDict["layer_9"](output)
         output = self.layerDict["max_pool3"](output)
         # print("tensor with shape{} is going to fc".format(output.shape))
         output = torch.flatten(output, start_dim=1)

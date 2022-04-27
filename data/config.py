@@ -7,13 +7,14 @@ cfg_alexnet = {
     'gpu_train': True,
     'batch_size': 64,
     'ngpu': 4,
-    'epoch': 100,
+    'epoch': 45,
     'decay1': 70,
     'decay2': 90,
     'image_size': 128,
     'pretrain': False,
     'in_channel': 8,
-    'out_channel': 64
+    'out_channel': 64, 
+    "cuddbenchMark": False
 }
 # 
 cfg_nasmodel = {
@@ -22,7 +23,7 @@ cfg_nasmodel = {
     'loc_weight': 1.0,
     'gpu_train': True,
     'batch_size': 64,
-    'start_train_nas_epoch': 0,
+    'start_train_nas_epoch': 4,
     'ngpu': 1,
     'epoch': 45,
     'decay1': 70,
@@ -30,7 +31,13 @@ cfg_nasmodel = {
     'image_size': 128,
     'pretrain': False,
     'in_channel': 8,
-    'out_channel': 64
+    'out_channel': 64,
+    "numOfClasses": 10,
+    "numOfLayers": 5,
+    "numOfInnerCell": 2,
+    "numOfOperations":6,
+    "cuddbenchMark": False,
+    
 }
 
 cfg_newnasmodel = {
@@ -40,14 +47,18 @@ cfg_newnasmodel = {
     'gpu_train': True,
     'batch_size': 64,
     'ngpu': 1,
-    'epoch': 25,
-    'epoch2': 25,
+    'epoch': 45,
     'decay1': 70,
     'decay2': 90,
     'image_size': 128,
     'pretrain': False,
     'in_channel': 8,
-    'out_channel': 64
+    'out_channel': 64,
+    "numOfClasses": 10,
+    "numOfLayers": 5,
+    "numOfInnerCell": 2,
+    "numOfOperations":5,
+    "cuddbenchMark": False
 }
 
 epoch_to_drop = [10, 25, 35] #在第幾個epoch要使用剔除機制

@@ -1,5 +1,3 @@
-
-
 from re import M
 import torch
 import torch.nn as nn
@@ -9,77 +7,93 @@ import torch.nn.functional as F
 import os
 import numpy as np
 from feature.utility import getCurrentTime1 as getCurrentTime
-from models.alpha.cell import Cell_conv
+# from models.alpha.cell import Cell_conv
+from models.alpha.operation import OPS
+from data.config import PRIMITIVES
+from data.config import cfg_nasmodel as cfg
+#* concate two inner cell experiment
+
+
+
 #info Cell_conv actually is innerCell
+class InnerCell(nn.Module):
+    #todo make it general def __init__(self, inputChannel, outputChannel, stride, cellArchPerIneerCell, alphas)
+    def __init__(self, inputChannel, outputChannel, stride, cellArchPerIneerCell = PRIMITIVES):
+        super(InnerCell, self).__init__()
+        self.cellArchPerIneerCell = cellArchPerIneerCell
+        self.numOfInnerCell = 2
+        #Todo OPS[primitive]
+        #todo maybe make it a dictionary layer_i_j_convName
+        #info make operations to a list according cellArchPerIneerCell
+        self.opList = nn.ModuleList()
+        for opName in self.cellArchPerIneerCell:
+            self.opList.append(OPS[opName](inputChannel, outputChannel, stride, False, False))
+        
+    def forward(self, input, alphasOfinnerCell):
+        #info add each output of operation element-wise
+        # print("next(model.parameters()).is_cuda", next(self.parameters()).is_cuda)
+        out = self.opList[0](input)
+        
+        for alpha, op in zip(alphasOfinnerCell, self.opList):
+            #! Can NOT use inplace operation +=. WHY? 
+            #! Ans: inplace operation make computational graphq fail
+            out = out + alpha * op(input)
+            
+        return out
+
+
 class Layer(nn.Module):
-    def __init__(self, numOfInnerCell, layer, inputChannel=3, outputChannel=96, stride=1, padding=1,  cell=Cell_conv):
+    def __init__(self, numOfInnerCell, layer, inputChannel=3, outputChannel=96, stride=1, padding=1,  cell=InnerCell):
         super(Layer, self).__init__()
+        #info set private attribute
         self.numOfInnerCell = numOfInnerCell
         self.layer = layer
         self.inputChannel = inputChannel
         self.outputChannel = outputChannel
-        #info two innerCells per layer 
+        #info set inner cell
         self.innerCellList = nn.ModuleDict({
-            'innerCell_'+str(layer)+'_0': cell(inputChannel, outputChannel, stride),
-            # 'innerCell_'+str(layer)+'_1': cell(inputChannel, outputChannel, stride),
+            'innerCell_'+str(layer)+'_0': cell(inputChannel, outputChannel//self.numOfInnerCell, stride),
+            'innerCell_'+str(layer)+'_1': cell(inputChannel, outputChannel//self.numOfInnerCell, stride),
         })
     def forward(self, input, alphas):
-
+        #* concate innerCell's output instead of add them elementwise
         indexOfInnerCell = 0
         output = 0
         for name in self.innerCellList:
             # add each inner cell directly without alphas involved
-            output = output + self.innerCellList[name](input, alphas[indexOfInnerCell])
+            if indexOfInnerCell == 0:
+                output = self.innerCellList[name](input, alphas[indexOfInnerCell])
+            else:
+                output = torch.cat( (output, self.innerCellList[name](input, alphas[indexOfInnerCell])), dim=1 )
+
             indexOfInnerCell = indexOfInnerCell + 1
             # print("innerCellList{} output".format(name), output)
-
         return output
-    
-class Conv(nn.Module):
-    def __init__(self, C_in, C_out, kernel_size, stride, padding, affine):
-        super(Conv, self).__init__()
-        self.op = nn.Sequential(
-            nn.Conv2d(C_in, C_out, kernel_size, stride, padding),
-            # nn.BatchNorm2d(C_out, affine=affine),
-            # nn.ReLU(inplace=False),
-        )
-        self._initialize_weights() #* initialize kernel weights
 
-    def forward(self, x):
-        return self.op(x)
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                torch.nn.init.kaiming_normal_(m.weight)
-            elif isinstance(m, nn.BatchNorm2d):
-                if m.weight is not None:
-                    m.weight.data.fill_(1)
-                    m.bias.data.zero_()
 
 
 class Model(nn.Module):
-    def __init__(self, numOfLayer, numOfInnerCell, numOfClasses):
+    def __init__(self):
         super(Model, self).__init__()
         #info private attribute
-        self.numOfOpPerCell = 5
-        self.numOfLayer = numOfLayer
-        self.numOfInnerCell = numOfInnerCell
+        self.numOfOpPerCell = cfg["numOfOperations"]
+        self.numOfLayer = cfg["numOfLayers"]
+        self.numOfInnerCell = cfg["numOfInnerCell"]
         self.alphasSaveDir = r'./alpha_pdart_nodrop'
         self.currentEpoch = 0
         self.maskSaveDir = r'./saved_mask_per_epoch'
         #info network structure
         self.layerDict = nn.ModuleDict({
             "layer_0":Layer(self.numOfInnerCell, 0, 3, 96, 4),
-            "layer_1":Layer(self.numOfInnerCell, 1, 96, 96, 4),
-            "layer_2":Layer(self.numOfInnerCell, 2, 96, 256, 1),
-            "layer_3":Layer(self.numOfInnerCell, 3, 256, 256, 1),
-            "layer_4":Layer(self.numOfInnerCell, 4, 256, 384, 1),
-            "layer_5":Layer(self.numOfInnerCell, 5, 384, 384, 1),
-            "layer_6":Layer(self.numOfInnerCell, 6, 384, 384, 1),
-            "layer_7":Layer(self.numOfInnerCell, 7, 384, 384, 1),
-            "layer_8":Layer(self.numOfInnerCell, 8, 384, 256, 1),
-            "layer_9":Layer(self.numOfInnerCell, 9, 256, 256, 1),
+            # "layer_1":Layer(self.numOfInnerCell, 1, 96*numOfInnerCell, 96, 4),
+            "layer_1":Layer(self.numOfInnerCell, 2, 96, 256, 1),
+            "layer_2":Layer(self.numOfInnerCell, 3, 256, 384, 1),
+            "layer_3":Layer(self.numOfInnerCell, 4, 384, 384, 1),
+            "layer_4":Layer(self.numOfInnerCell, 5, 384, 256, 1),
+            # "layer_6":Layer(self.numOfInnerCell, 6, 384*numOfInnerCell, 384, 1),
+            # "layer_7":Layer(self.numOfInnerCell, 7, 384*numOfInnerCell, 384, 1),
+            # "layer_8":Layer(self.numOfInnerCell, 8, 384*numOfInnerCell, 256, 1),
+            # "layer_9":Layer(self.numOfInnerCell, 9, 256*numOfInnerCell, 256, 1),
             "max_pool1":nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
             "max_pool2": nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
             'max_pool3': nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -87,11 +101,11 @@ class Model(nn.Module):
         # print(self.layerDict["layer_0"])
         
         self.fc = nn.Sequential(
-            nn.Linear(256 * 1 * 1, 4096),
+            nn.Linear(256 * 4 * 4, 4096),
             nn.ReLU(inplace=True),
             nn.Linear(4096, 2048),
             nn.ReLU(inplace=True),
-            nn.Linear(2048, numOfClasses)
+            nn.Linear(2048, cfg["numOfClasses"])
         )
         
         #info initailize alphas and alphas mask, and register them with model
@@ -101,7 +115,6 @@ class Model(nn.Module):
         #* self.alphas can get the attribute
     def initailizeAlphas(self):
         #* set the first innercell's alpha to being evenly distributed, set second innercell's alphas to random
-        torch.manual_seed(0)
         self._alphas = F.softmax( 0.01*torch.ones([self.numOfLayer, self.numOfInnerCell, self.numOfOpPerCell], requires_grad=False) )
         tmp = F.softmax( torch.rand(self.numOfLayer, self.numOfInnerCell, self.numOfOpPerCell) )
         
@@ -132,7 +145,7 @@ class Model(nn.Module):
             os.makedirs(self.alphasSaveDir)
         tmp = self.alphas.clone().detach()
         tmp = tmp.data.cpu().numpy()
-        fileName =  os.path.join(self.alphasSaveDir, 'alpha_prob_' + str(kthSeed) + '_' + str(epoch)+"_"+getCurrentTime())
+        fileName =  os.path.join(self.alphasSaveDir, 'alpha_prob_' + str(kthSeed) + '_' + str(epoch))
         np.save(fileName, tmp)
         # print("\nepcho:", epoch, "save alphas:", tmp)
     def saveMask(self, epoch, kthSeed):
@@ -171,27 +184,30 @@ class Model(nn.Module):
         return  epoch in epoch_to_drop
     def forward(self, input, epoch, kthSeed):
         #* every time use alphas need to set alphas to 0 which has been drop
-        # self.filtAlphas()
-
+        self.filtAlphas()
+        # print("foward()")
         output = self.layerDict["layer_0"](input, self.alphas[0])
         # print("output layer_0", output)
-        output = self.layerDict["layer_1"](output, self.alphas[1])
         output = self.layerDict["max_pool1"](output)
-        output = self.layerDict["layer_2"](output , self.alphas[2])
-        output = self.layerDict["layer_3"](output , self.alphas[3])
+        output = self.layerDict["layer_1"](output, self.alphas[1])
+        output = self.layerDict["layer_2"](output, self.alphas[2])
+        # print("output layer_2", output)
         output = self.layerDict["max_pool2"](output)
+        output = self.layerDict["layer_3"](output , self.alphas[3])
         output = self.layerDict["layer_4"](output , self.alphas[4])
-        output = self.layerDict["layer_5"](output , self.alphas[5])
+        output = self.layerDict["max_pool3"](output)
+        # output = self.layerDict["layer_5"](output , self.alphas[5])
+        
         # print("self.layerDict[layer_5](output , self.alphas[5])", output)
         #! 先關閉layer3 layer4 增加訓練速度
-        output = self.layerDict["layer_6"](output , self.alphas[6])
+        # output = self.layerDict["layer_6"](output , self.alphas[6])
         # print("self.layerDict[layer_6](output , self.alphas[6]", output)
-        output = self.layerDict["layer_7"](output , self.alphas[7])
+        # output = self.layerDict["layer_7"](output , self.alphas[7])
         # print("self.layerDict[layer_67](output , self.alphas[7]", output)
-        output = self.layerDict["layer_8"](output , self.alphas[8])
+        # output = self.layerDict["layer_8"](output , self.alphas[8])
         # print("self.layerDict[layer_8](output , self.alphas[8]", output)
-        output = self.layerDict["layer_9"](output , self.alphas[9])
-        output = self.layerDict["max_pool3"](output)
+        # output = self.layerDict["layer_9"](output , self.alphas[9])
+        # output = self.layerDict["max_pool3"](output)
         # print("self.layerDict[max_pool3](output)", output)
         # print("tensor with shape{} is going to fc".format(output.shape))
         output = torch.flatten(output, start_dim=1)

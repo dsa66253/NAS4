@@ -27,12 +27,12 @@ def loadAllAlphas():
     return listAlphas
 
 def loadAlphasAtEpoch(kth, epoch):
-    return  np.load("./alpha_pdart_nodrop/alpha_prob_{}_{}.npy".format(str(kth), str(epoch)))
+    return  np.load("./alpha_pdart_nodrop/alpha_prob_{}_{}_.npy".format(str(kth), str(epoch)))
 def decodeAlphas(kth):
     #* get index of innercell which hase greatest alphas value
     genotype_filename = os.path.join('./weights_pdarts_nodrop/',
                         'genotype_' + str(kth))
-    lastEpoch = 43
+    lastEpoch = 44
     lastAlphas = loadAlphasAtEpoch(kth, lastEpoch)
     maxAlphasIndex = np.argmax(lastAlphas, -1)
     np.save(genotype_filename, maxAlphasIndex)

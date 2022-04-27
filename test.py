@@ -1,34 +1,39 @@
 # 测试集
 import argparse
+from tqdm import tqdm
 import os
 import sys
-import random
 from pathlib import Path
-
 import numpy as np
 import torch
 from sklearn.model_selection import train_test_split
 from torch.autograd import Variable
-from torch.backends import cudnn
 from torch.utils.data import Subset
 from torchvision import transforms, datasets
-from data.config import cfg_newnasmodel
+from data.config import cfg_newnasmodel, cfg_alexnet
 # from models.newmodel_8cell import NewNasModel
 # from models.newmodel_5cell import NewNasModel
-from models.mynewmodel_5cell import NewNasModel
+# from models.mynewmodel_5cell import NewNasModel
+from retrainModel import NewNasModel
+from models.alexnet import Baseline
 from feature.learning_rate import adjust_learning_rate
 from feature.normalize import normalize
 from feature.make_dir import makeDir
-from feature.utility import setStdoutToFile, setStdoutToDefault
+from feature.utility import getCurrentTime, getCurrentTime1, setStdoutToDefault, setStdoutToFile, accelerateByGpuAlgo
 from feature.random_seed import set_seed_cpu, set_seed_gpu
 
+
+stdoutTofile = True
+accelerateButUndetermine = True
+def get_device():
+    return 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def parse_args(i):
     parser = argparse.ArgumentParser(description='imagenet nas Training')
     parser.add_argument('-m', '--trained_model',
                         default='./weights_retrain_pdarts/NewNasModel' + str(i) + '_Final.pth',
                         type=str, help='Trained state_dict file path to open')
-    parser.add_argument('--network', default='newnasmodel', help='Backbone network mobile0.25 or resnet50')
+    parser.add_argument('--network', default='newnasmodel', help='alexnet or newnasmodel')
     parser.add_argument('--num_workers', default=0, type=int, help='Number of workers used in dataloading')
     parser.add_argument('--lr', '--learning-rate', default=1e-3, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
@@ -39,86 +44,84 @@ def parse_args(i):
     parser.add_argument('--gamma', default=0.1, type=float, help='Gamma update for SGD')
     parser.add_argument('--decode_folder', type=str, default='./weights_pdarts_nodrop',
                         help='put the path to resuming file if needed')
+    parser.add_argument('--retrainSavedModel', type=str, default='./retrainSavedModel',
+                        help='put the path to resuming file if needed')
     parser.add_argument('--genotype_file', type=str, default='genotype_' + str(i) + '.npy',
                         help='put decode file')
     args = parser.parse_args()
     return args
 
-
-def test(seed_cpu):
+def printNetWeight(net):
+    for name, para in net.named_parameters():
+        print(name, para)
+def prepareData():
+    print("preparing data set")
     PATH_test = r"./dataset1/test"
     test = Path(PATH_test)
     test_transforms = normalize(seed_cpu, img_dim)
 
     # choose the training datasets
     test_data = datasets.ImageFolder(test, transform=test_transforms)
-
     print("test_data.class_to_idx", test_data.class_to_idx)
+    return test_data
 
-    # prepare data loaders (combine dataset and sampler)
+def prepareDataLoader(test_data):
+    print("preparing data loader")
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, num_workers=num_workers, shuffle=False)
-    print("test_data length: ", len(test_data))
+    return test_loader
+def prepareModel(num_classes, kth):
+    print("preparing model: ", args.network)
+    #info preparing alexnet model
+    if args.network == "alexnet":
+        try:
+            net = Baseline(num_classes)
+            modelLoadPath = os.path.join(args.retrainSavedModel, "alexnet{}_Final.pth".format(kth))
+            net.load_state_dict(torch.load( modelLoadPath ))
+            net = net.to(device)
+            net.eval()
+            print("Loading model from ", modelLoadPath)
+            
+            return net
+        except:
+            print("Fail to load model from ", modelLoadPath)
+            exit()
+    #info preparing trained NAS model
 
-    if os.path.isdir(args.decode_folder):
-        genotype_filename = os.path.join(args.decode_folder, args.genotype_file)
-        cell_arch = np.load(genotype_filename)
-        print(cell_arch)
-        print('Load best alpha for each cells from %s' % (genotype_filename))
-    else:
-        print('Decode path is not exist!')
-        sys.exit(0)
+    if args.network == "newnasmodel":
+        try :
+            #info prepare architecture
+            # os.path.isdir(args.decode_folder)
+            genotype_filename = os.path.join(args.decode_folder, args.genotype_file)
+            cell_arch = np.load(genotype_filename)
+            print('Load best alpha for each cells from %s' % (genotype_filename))
+            print(cell_arch)
+        except:
+            print("Fail to load architecture from ", genotype_filename)
+            exit()
+            
+        try:
+            #info prepare model
+            net = NewNasModel(5, 1, numOfClasses=num_classes, cellArch=cell_arch)
+            print("net ", net)
+            modelLoadPath = os.path.join( args.retrainSavedModel, "NewNasModel{}_Final.pth".format(kth) )
+            net.load_state_dict( torch.load( modelLoadPath ) )
+            net = net.to(device)
+            net.eval()
+            print("Loading model from ", modelLoadPath)
+            return net
+        # todo test.py go wrong, check pytorch document how to test model
+        except Exception as e:
+            print("Fail to load model from ", modelLoadPath)
+            print(e)
+            exit()
 
-    def check_keys(model, pretrained_state_dict):
-        ckpt_keys = set(pretrained_state_dict.keys())
-        model_keys = set(model.state_dict().keys())
-        used_pretrained_keys = model_keys & ckpt_keys
-        unused_pretrained_keys = ckpt_keys - model_keys
-        missing_keys = model_keys - ckpt_keys
-        print('Missing keys:{}'.format(len(missing_keys)))
-        print('Unused checkpoint keys:{}'.format(len(unused_pretrained_keys)))
-        print('Used keys:{}'.format(len(used_pretrained_keys)))
-        assert len(used_pretrained_keys) > 0, 'load NONE from pretrained checkpoint'
-        return True
-
-    def remove_prefix(state_dict, prefix):
-        ''' Old style model is stored with all names of parameters sharing common prefix 'module.' '''
-        print('remove prefix \'{}\''.format(prefix))
-        f = lambda x: x.split(prefix, 1)[-1] if x.startswith(prefix) else x
-        return {f(key): value for key, value in state_dict.items()}
-
-    def load_model(model, pretrained_path, load_to_cpu):
-        print('Loading pretrained model from {}'.format(pretrained_path))
-        if load_to_cpu:
-            pretrained_dict = torch.load(pretrained_path, map_location=lambda storage, loc: storage)
-        else:
-            device = torch.cuda.current_device()
-            pretrained_dict = torch.load(pretrained_path, map_location=lambda storage, loc: storage.cuda(device))
-        if "state_dict" in pretrained_dict.keys():
-            pretrained_dict = remove_prefix(pretrained_dict['state_dict'], 'module.')
-        else:
-            pretrained_dict = remove_prefix(pretrained_dict, 'module.')
-        check_keys(model, pretrained_dict)
-        model.load_state_dict(pretrained_dict, strict=False)
-        return model
-
-    # net and model
-    print("NewNasModel")
-    net = NewNasModel(5, 2, numOfClasses=num_classes, cellArch=cell_arch)
-    print("load_model")
-    net = load_model(net, args.trained_model, args.cpu)
-    print("eval")
-    net.eval()
-    # print('Finished loading model!')
-    # print(net)
-    # cudnn.benchmark = True
-    device = torch.device("cpu" if args.cpu else "cuda")
-    net = net.to(device)
-
+def test(seed_cpu, test_loader, net):
+    print("start testing")
     confusion_matrix_torch = torch.zeros(num_classes, num_classes)
     with torch.no_grad():
         correct = 0
         total = 0
-        for i, data in enumerate(test_loader, 0):
+        for i, data in enumerate(tqdm(test_loader, 0)):
             images, labels = data
             labels = Variable(labels.cuda())
             images = Variable(images.cuda())
@@ -134,18 +137,23 @@ def test(seed_cpu):
 
 if __name__ == '__main__':
     
-    for i in range(1):
+    device = get_device()
+    for kth in range(3):
         #info handle stdout to a file
-        trainLogDir = "./log"
-        makeDir(trainLogDir)
-        f = setStdoutToFile(trainLogDir+"/test_py_{}th".format(str(i)))
-        
-        args = parse_args(str(i))
+        if stdoutTofile:
+            trainLogDir = "./log"
+            makeDir(trainLogDir)
+            f = setStdoutToFile(trainLogDir+"/test_py_{}th.txt".format(str(kth)))
+        accelerateByGpuAlgo(accelerateButUndetermine)
+        args = parse_args(str(kth))
         # makeDir(args.save_folder, args.log_dir)
         cfg = None
-        if args.network == "newnasmodel":
-            cfg = cfg_newnasmodel
-        else:
+        try:
+            if args.network == "newnasmodel":
+                cfg = cfg_newnasmodel
+            elif args.network == "alexnet":
+                cfg = cfg_alexnet
+        except:
             print('Retrain Model %s doesn\'t exist!' % (args.network))
             sys.exit(0)
 
@@ -165,7 +173,11 @@ if __name__ == '__main__':
 
         seed_cpu = 28
         set_seed_cpu(seed_cpu)
+        testSet = prepareData()
+        testDataLoader = prepareDataLoader(testSet)
+        net = prepareModel(num_classes, kth)
+        printNetWeight(net)
+        test(seed_cpu, testDataLoader, net)
         
-        test(seed_cpu)
-        
-        setStdoutToDefault(f)
+        if stdoutTofile:
+            setStdoutToDefault(f)
